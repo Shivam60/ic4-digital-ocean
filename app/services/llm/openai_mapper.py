@@ -40,7 +40,9 @@ def to_upstream_payload(
     return payload
 
 
-def to_unified_response(body: dict[str, Any], *, provider: str) -> ChatCompletionResponse:
+def to_unified_response(
+    body: dict[str, Any], *, provider: str
+) -> ChatCompletionResponse:
     try:
         choices = [
             ChatCompletionChoice(

@@ -5,12 +5,15 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.api.deps import get_http_client
+from app.api.deps import get_model_repository
 from app.core.config import Settings, get_settings
-from app.services.completions import PROVIDER_NAME, SSE_DONE
+from app.services.llm.ollama import OllamaService
+from app.services.llm.openai_mapper import SSE_DONE
+from app.services.model_repository import ModelRepository
 
 UPSTREAM_API_KEY = "test-key"
 UPSTREAM_CHUNK_SIZE = 7
+PROVIDER_NAME = "ollama"
 
 
 def _upstream_frame(content: str | None, finish_reason: str | None = None) -> str:
@@ -61,7 +64,19 @@ def seen_requests(app: FastAPI, upstream_settings: Settings) -> list[httpx.Reque
         )
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    app.dependency_overrides[get_http_client] = lambda: mock_client
+    repository = ModelRepository(
+        services=[
+            OllamaService(
+                name=PROVIDER_NAME,
+                client=mock_client,
+                base_url="http://upstream.test/v1",
+                api_key=UPSTREAM_API_KEY,
+            )
+        ],
+        routes={},
+        default_chain=[PROVIDER_NAME],
+    )
+    app.dependency_overrides[get_model_repository] = lambda: repository
     app.dependency_overrides[get_settings] = lambda: upstream_settings
     yield captured
     app.dependency_overrides.clear()

@@ -23,12 +23,14 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     openai_api_key: str | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
 
-    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    providers: dict[str, str] = Field(
+        default_factory=lambda: {"ollama": "http://127.0.0.1:11434/v1"}
+    )
+    provider_api_keys: dict[str, str] = Field(default_factory=dict)
 
-    default_provider: str = "ollama"
-    model_routes: dict[str, str] = Field(default_factory=dict)
+    default_chain: list[str] = Field(default_factory=lambda: ["ollama"])
+    model_routes: dict[str, list[str]] = Field(default_factory=dict)
 
     # Streaming upstreams must not carry a read timeout: long gaps between tokens are
     # normal. A stalled-but-connected upstream is caught by the first-chunk budget.

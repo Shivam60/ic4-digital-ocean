@@ -122,20 +122,25 @@ streaming, and upstream error passthrough all confirmed.
       *Commit:* `feat: SSE streaming relay`
       *Retires the risk of:* generator lifetime and premature header flush.
 
-- [ ] **4. Adapter seam plus mock provider.** Extract the provider interface; add a mock
-      provider with injectable failures. Pure refactor, no new user-facing behaviour.
-      *Done when:* config can point a model at the mock and get fake tokens.
-      *Commit:* `refactor: extract provider adapter interface, add mock provider`
+- [x] **4. Adapter seam.** Extract the `LLMService` protocol, add `OllamaService` owning
+      its own translation, and a `ModelRepository` the route depends on. Pure refactor.
+      *Done when:* a completion returns `"provider":"ollama"` through the repository.
+      *Commit:* `refactor: introduce LLMService adapter seam and ModelRepository`
+
+- [ ] **4b. Streaming on the service layer.** Move `stream()` onto `LLMService` returning
+      an opened, status-checked handle so the route no longer calls an upstream directly.
+      *Done when:* a streamed response reports `"provider":"ollama"`.
 
 - [ ] **5. Routing table.** Model alias resolves to an ordered provider chain. Chains may
       still be length one.
       *Done when:* two aliases demonstrably reach different providers.
       *Commit:* `feat: model routing table`
 
-- [ ] **6. Silent fallback, pre-commit.** The attempt loop and commit point. Driven by
-      the mock's injectable 429/503. This is the core deliverable.
-      *Done when:* primary is forced to 429 and the client still receives one clean,
-      uninterrupted stream from the backup.
+- [ ] **6. Silent fallback, pre-commit.** The attempt loop and commit point in
+      `ModelRepository`. Transient means 429, 502, 503, 504 and transport failures;
+      everything else is terminal and breaks the loop. This is the core deliverable.
+      *Done when:* the primary is a provider pointed at a dead port and the client still
+      receives one clean, uninterrupted stream from the backup.
       *Commit:* `feat: silent pre-commit fallback across provider chain`
 
 ### Hardening — each is independently shippable

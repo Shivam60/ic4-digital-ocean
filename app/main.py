@@ -10,6 +10,7 @@ from app import __version__
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import (
+    AllProvidersFailedError,
     GatewayConfigError,
     UpstreamError,
     UpstreamProtocolError,
@@ -30,9 +31,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
         app.state.model_repository = ModelRepository(
-            services=[OllamaService(client, settings.ollama_base_url)],
+            services=[
+                OllamaService(
+                    name=name,
+                    client=client,
+                    base_url=base_url,
+                    api_key=settings.provider_api_keys.get(name),
+                )
+                for name, base_url in settings.providers.items()
+            ],
             routes=settings.model_routes,
-            default_provider=settings.default_provider,
+            default_chain=settings.default_chain,
         )
         yield
 
@@ -82,6 +91,29 @@ def create_app() -> FastAPI:
                     "type": "model_not_routable",
                     "model": exc.model,
                     "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(AllProvidersFailedError)
+    async def all_providers_failed_handler(
+        _: Request, exc: AllProvidersFailedError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "all_providers_failed",
+                    "model": exc.model,
+                    "message": str(exc),
+                    "attempts": [
+                        {
+                            "provider": attempt.provider,
+                            "status_code": attempt.status_code,
+                            "detail": attempt.detail,
+                        }
+                        for attempt in exc.attempts
+                    ],
                 }
             },
         )
