@@ -1,0 +1,40 @@
+---
+description: Project preference - do not write tests or code comments
+alwaysApply: true
+---
+
+# No Tests
+
+Do not create test files, test functions, or test fixtures. Do not add testing
+dependencies or test runner configuration.
+
+Verify work by running the code itself (start the server, hit the endpoint, run the
+script) instead of writing a test for it.
+
+Only write tests when the user explicitly asks for them in that request.
+
+# No Comments
+
+Do not add comments to code. This includes docstrings, inline comments, block comments,
+and TODO notes.
+
+```python
+# ❌ BAD
+async def create(self, payload: ItemCreate) -> ItemRead:
+    """Create an item and return it."""
+    # acquire the lock so IDs stay unique
+    async with self._lock:
+        ...
+
+# ✅ GOOD
+async def create(self, payload: ItemCreate) -> ItemRead:
+    async with self._lock:
+        ...
+```
+
+Write self-explanatory names instead of explanatory comments. Preserve comments that
+already exist in files you edit; this rule governs what you add, not what is there.
+
+Exceptions, which are not comments in the prose sense: license headers, shebangs, coding
+declarations, pragmas that change tooling behavior (`# type: ignore`, `# noqa`,
+`# pyright: ignore`), and comments the user explicitly requests.
