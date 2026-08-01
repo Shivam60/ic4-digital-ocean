@@ -1,8 +1,16 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ProviderKind = Literal["openai", "ollama", "anthropic"]
+
+
+class ProviderConfig(BaseModel):
+    kind: ProviderKind
+    base_url: str
+    api_key: str | None = None
 
 
 class Settings(BaseSettings):
@@ -22,15 +30,19 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
-    openai_api_key: str | None = None
-
-    providers: dict[str, str] = Field(
-        default_factory=lambda: {"ollama": "http://127.0.0.1:11434/v1"}
+    providers: dict[str, ProviderConfig] = Field(
+        default_factory=lambda: {
+            "ollama": ProviderConfig(
+                kind="ollama", base_url="http://127.0.0.1:11434"
+            )
+        }
     )
-    provider_api_keys: dict[str, str] = Field(default_factory=dict)
 
     default_chain: list[str] = Field(default_factory=lambda: ["ollama"])
     model_routes: dict[str, list[str]] = Field(default_factory=dict)
+
+    anthropic_version: str = "2023-06-01"
+    anthropic_default_max_tokens: int = 1024
 
     # Streaming upstreams must not carry a read timeout: long gaps between tokens are
     # normal. A stalled-but-connected upstream is caught by the first-chunk budget.

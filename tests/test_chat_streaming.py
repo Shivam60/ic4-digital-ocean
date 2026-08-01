@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from app.api.deps import get_model_repository
 from app.core.config import Settings, get_settings
-from app.services.llm.ollama import OllamaService
+from app.services.llm.openai import OpenAIService
 from app.services.llm.openai_mapper import SSE_DONE
 from app.services.model_repository import ModelRepository
 
@@ -66,7 +66,7 @@ def seen_requests(app: FastAPI, upstream_settings: Settings) -> list[httpx.Reque
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     repository = ModelRepository(
         services=[
-            OllamaService(
+            OpenAIService(
                 name=PROVIDER_NAME,
                 client=mock_client,
                 base_url="http://upstream.test/v1",

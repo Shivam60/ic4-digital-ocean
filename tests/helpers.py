@@ -5,8 +5,12 @@ import httpx
 from fastapi import FastAPI
 
 from app.api.deps import get_model_repository
+from app.services.llm.anthropic import AnthropicService
+from app.services.llm.base import LLMService
 from app.services.llm.ollama import OllamaService
+from app.services.llm.openai import OpenAIService
 from app.services.model_repository import ModelRepository
+from mock_provider.anthropic import app as mock_anthropic_app
 from mock_provider.ollama import app as mock_ollama_app
 from mock_provider.openai import app as mock_openai_app
 
@@ -18,34 +22,68 @@ MODEL_UNKNOWN = "mock/does-not-exist"
 DONE = "[DONE]"
 OPENAI_MOCK_REPLY = "Hello, world from the mock provider."
 OLLAMA_MOCK_REPLY = "Hello, world from the ollama mock."
+ANTHROPIC_MOCK_REPLY = "Hello, world from the anthropic mock."
 
 
-def openai_provider(name: str = "openai_mock") -> OllamaService:
-    return _asgi_provider(name, mock_openai_app)
+def openai_provider(name: str = "openai_mock") -> OpenAIService:
+    return OpenAIService(
+        name=name,
+        client=_asgi_client(mock_openai_app),
+        base_url="http://provider.test/v1",
+    )
 
 
 def ollama_provider(name: str = "ollama_mock") -> OllamaService:
-    return _asgi_provider(name, mock_ollama_app)
+    return OllamaService(
+        name=name,
+        client=_asgi_client(mock_ollama_app),
+        base_url="http://provider.test",
+    )
 
 
-def provider_returning(status_code: int, name: str = "flaky") -> OllamaService:
+def ollama_compat_provider(name: str = "ollama_compat") -> OpenAIService:
+    return OpenAIService(
+        name=name,
+        client=_asgi_client(mock_ollama_app),
+        base_url="http://provider.test/v1",
+    )
+
+
+def anthropic_provider(name: str = "anthropic_mock") -> AnthropicService:
+    return AnthropicService(
+        name=name,
+        client=_asgi_client(mock_anthropic_app),
+        base_url="http://provider.test",
+        api_key="test-anthropic-key",
+    )
+
+
+def provider_returning(status_code: int, name: str = "flaky") -> OpenAIService:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status_code,
             json={"error": {"message": "upstream is unhappy", "type": "server_error"}},
         )
 
-    return _transport_provider(name, httpx.MockTransport(handler))
+    return OpenAIService(
+        name=name,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="http://provider.test/v1",
+    )
 
 
-def unreachable_provider(name: str = "dead") -> OllamaService:
+def unreachable_provider(name: str = "dead") -> OpenAIService:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    return _transport_provider(name, httpx.MockTransport(handler))
+    return OpenAIService(
+        name=name,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="http://provider.test/v1",
+    )
 
 
-def use_chain(app: FastAPI, *providers: OllamaService) -> None:
+def use_chain(app: FastAPI, *providers: LLMService) -> None:
     repository = ModelRepository(
         services=list(providers),
         routes={},
@@ -94,15 +132,5 @@ def error_of(response: httpx.Response) -> dict[str, Any]:
     return response.json()["error"]
 
 
-def _asgi_provider(name: str, asgi_app: FastAPI) -> OllamaService:
-    return _transport_provider(name, httpx.ASGITransport(app=asgi_app))
-
-
-def _transport_provider(
-    name: str, transport: httpx.BaseTransport | httpx.AsyncBaseTransport
-) -> OllamaService:
-    return OllamaService(
-        name=name,
-        client=httpx.AsyncClient(transport=transport),
-        base_url="http://provider.test/v1",
-    )
+def _asgi_client(asgi_app: FastAPI) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=asgi_app))

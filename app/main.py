@@ -15,7 +15,7 @@ from app.core.errors import (
     UpstreamError,
     UpstreamProtocolError,
 )
-from app.services.llm.ollama import OllamaService
+from app.services.llm.registry import build_services
 from app.services.model_repository import ModelNotRoutableError, ModelRepository
 
 
@@ -31,15 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
         app.state.model_repository = ModelRepository(
-            services=[
-                OllamaService(
-                    name=name,
-                    client=client,
-                    base_url=base_url,
-                    api_key=settings.provider_api_keys.get(name),
-                )
-                for name, base_url in settings.providers.items()
-            ],
+            services=build_services(settings, client),
             routes=settings.model_routes,
             default_chain=settings.default_chain,
         )
