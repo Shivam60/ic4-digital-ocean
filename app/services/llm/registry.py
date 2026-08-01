@@ -38,9 +38,7 @@ def build_service(
     )
 
 
-def build_services(
-    settings: Settings, client: httpx.AsyncClient
-) -> list[LLMService]:
+def build_services(settings: Settings, client: httpx.AsyncClient) -> list[LLMService]:
     services = [
         build_service(name, config, client, settings)
         for name, config in settings.providers.items()

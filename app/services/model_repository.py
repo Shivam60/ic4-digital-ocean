@@ -40,9 +40,7 @@ class ModelRepository:
             raise ModelNotRoutableError(model)
         return chain
 
-    async def complete(
-        self, request: ChatCompletionRequest
-    ) -> ChatCompletionResponse:
+    async def complete(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         attempts: list[ProviderAttempt] = []
         for service in self.resolve_chain(request.model):
             try:

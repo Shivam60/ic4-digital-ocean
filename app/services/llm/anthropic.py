@@ -52,9 +52,7 @@ class AnthropicService:
             default_max_tokens=self._default_max_tokens,
         )
 
-    async def complete(
-        self, request: ChatCompletionRequest
-    ) -> ChatCompletionResponse:
+    async def complete(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         response = await self._client.post(
             self._url,
             json=self._payload(request, stream=False),

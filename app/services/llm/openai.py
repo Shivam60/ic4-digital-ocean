@@ -36,9 +36,7 @@ class OpenAIService:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
-    async def complete(
-        self, request: ChatCompletionRequest
-    ) -> ChatCompletionResponse:
+    async def complete(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         response = await self._client.post(
             self._url,
             json=to_upstream_payload(request, model=request.model, stream=False),

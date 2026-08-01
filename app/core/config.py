@@ -32,9 +32,7 @@ class Settings(BaseSettings):
 
     providers: dict[str, ProviderConfig] = Field(
         default_factory=lambda: {
-            "ollama": ProviderConfig(
-                kind="ollama", base_url="http://127.0.0.1:11434"
-            )
+            "ollama": ProviderConfig(kind="ollama", base_url="http://127.0.0.1:11434")
         }
     )
 
