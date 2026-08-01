@@ -92,7 +92,7 @@ classDiagram
         +chat_completions(payload, repository)
     }
 
-    class ModelRepository {
+    class ModelRouter {
         -dict~str,LLMService~ services
         -dict~str,list~ routes
         -list default_chain
@@ -163,9 +163,9 @@ classDiagram
         +build_services()
     }
 
-    ChatRoute --> ModelRepository
-    ModelRepository o-- LLMService
-    ModelRepository ..> StreamHandle
+    ChatRoute --> ModelRouter
+    ModelRouter o-- LLMService
+    ModelRouter ..> StreamHandle
     LLMService <|.. OpenAIService
     LLMService <|.. OllamaService
     LLMService <|.. AnthropicService
@@ -339,7 +339,7 @@ app/
     routes/                   health.py, chat.py
   schemas/chat.py             unified request/response/chunk models
   services/
-    model_repository.py       chain resolution and the fallback loop
+    model_router.py           chain resolution and the fallback loop
     llm/base.py               LLMService protocol and StreamHandle
     llm/registry.py           builds services from configuration
     llm/openai.py             OpenAI provider service

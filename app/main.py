@@ -18,7 +18,7 @@ from app.core.errors import (
     UpstreamProtocolError,
 )
 from app.services.llm.registry import build_services
-from app.services.model_repository import ModelNotRoutableError, ModelRepository
+from app.services.model_router import ModelNotRoutableError, ModelRouter
 
 
 @asynccontextmanager
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
-        app.state.model_repository = ModelRepository(
+        app.state.model_router = ModelRouter(
             services=build_services(settings, client),
             routes=settings.model_routes,
             default_chain=settings.default_chain,

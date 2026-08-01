@@ -5,11 +5,11 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.api.deps import get_model_repository
+from app.api.deps import get_model_router
 from app.core.config import Settings, get_settings
 from app.services.llm.openai import OpenAIService
 from app.services.llm.openai_mapper import SSE_DONE
-from app.services.model_repository import ModelRepository
+from app.services.model_router import ModelRouter
 
 UPSTREAM_API_KEY = "test-key"
 UPSTREAM_CHUNK_SIZE = 7
@@ -64,7 +64,7 @@ def seen_requests(app: FastAPI, upstream_settings: Settings) -> list[httpx.Reque
         )
 
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    repository = ModelRepository(
+    model_router = ModelRouter(
         services=[
             OpenAIService(
                 name=PROVIDER_NAME,
@@ -76,7 +76,7 @@ def seen_requests(app: FastAPI, upstream_settings: Settings) -> list[httpx.Reque
         routes={},
         default_chain=[PROVIDER_NAME],
     )
-    app.dependency_overrides[get_model_repository] = lambda: repository
+    app.dependency_overrides[get_model_router] = lambda: model_router
     app.dependency_overrides[get_settings] = lambda: upstream_settings
     yield captured
     app.dependency_overrides.clear()

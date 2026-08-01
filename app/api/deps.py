@@ -7,7 +7,7 @@ from fastapi import Depends, Request
 from app.core.config import Settings, get_settings
 from app.core.errors import AuthenticationError, AuthorizationError
 from app.core.security import ANONYMOUS, Principal, hash_api_key
-from app.services.model_repository import ModelRepository
+from app.services.model_router import ModelRouter
 
 BEARER_PREFIX = "bearer "
 
@@ -16,13 +16,13 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.http_client
 
 
-def get_model_repository(request: Request) -> ModelRepository:
-    return request.app.state.model_repository
+def get_model_router(request: Request) -> ModelRouter:
+    return request.app.state.model_router
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 HttpClientDep = Annotated[httpx.AsyncClient, Depends(get_http_client)]
-ModelRepositoryDep = Annotated[ModelRepository, Depends(get_model_repository)]
+ModelRouterDep = Annotated[ModelRouter, Depends(get_model_router)]
 
 
 def _presented_key(request: Request) -> str:

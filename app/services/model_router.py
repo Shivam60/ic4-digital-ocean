@@ -22,7 +22,7 @@ class ModelNotRoutableError(GatewayError):
         super().__init__(f"no provider is configured for model '{model}'")
 
 
-class ModelRepository:
+class ModelRouter:
     def __init__(
         self,
         services: Sequence[LLMService],

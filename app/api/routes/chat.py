@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import ModelRepositoryDep, require_scope
+from app.api.deps import ModelRouterDep, require_scope
 from app.core.security import CHAT_COMPLETIONS_SCOPE, Principal
 from app.schemas.chat import ChatCompletionRequest, ChatCompletionResponse
 
@@ -19,13 +19,13 @@ CallerDep = Annotated[Principal, Depends(require_scope(CHAT_COMPLETIONS_SCOPE))]
 )
 async def chat_completions(
     payload: ChatCompletionRequest,
-    repository: ModelRepositoryDep,
+    model_router: ModelRouterDep,
     caller: CallerDep,
 ) -> ChatCompletionResponse | StreamingResponse:
     if not payload.stream:
-        return await repository.complete(payload)
+        return await model_router.complete(payload)
 
-    handle = await repository.stream(payload)
+    handle = await model_router.stream(payload)
     return StreamingResponse(
         handle.events,
         media_type="text/event-stream",

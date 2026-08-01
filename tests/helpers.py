@@ -4,12 +4,12 @@ from typing import Any
 import httpx
 from fastapi import FastAPI
 
-from app.api.deps import get_model_repository
+from app.api.deps import get_model_router
 from app.services.llm.anthropic import AnthropicService
 from app.services.llm.base import LLMService
 from app.services.llm.ollama import OllamaService
 from app.services.llm.openai import OpenAIService
-from app.services.model_repository import ModelRepository
+from app.services.model_router import ModelRouter
 from mock_provider.anthropic import app as mock_anthropic_app
 from mock_provider.ollama import app as mock_ollama_app
 from mock_provider.openai import app as mock_openai_app
@@ -121,12 +121,12 @@ def unreachable_provider(name: str = "dead") -> OpenAIService:
 
 
 def use_chain(app: FastAPI, *providers: LLMService) -> None:
-    repository = ModelRepository(
+    model_router = ModelRouter(
         services=list(providers),
         routes={},
         default_chain=[provider.name for provider in providers],
     )
-    app.dependency_overrides[get_model_repository] = lambda: repository
+    app.dependency_overrides[get_model_router] = lambda: model_router
 
 
 async def ask(
