@@ -12,18 +12,24 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "fastapi-async-service"
+    app_name: str = "model-router-gateway"
     environment: Literal["local", "dev", "staging", "prod"] = "local"
     debug: bool = False
-    api_v1_prefix: str = "/api/v1"
+    api_prefix: str = "/v1"
 
     host: str = "127.0.0.1"
     port: int = 8000
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
-    # Timeout applied to outbound HTTP calls made through the shared async client.
-    http_client_timeout_seconds: float = 10.0
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+
+    # Streaming upstreams must not carry a read timeout: long gaps between tokens are
+    # normal. A stalled-but-connected upstream is caught by the first-chunk budget.
+    upstream_connect_timeout_seconds: float = 5.0
+    upstream_write_timeout_seconds: float = 30.0
+    upstream_first_chunk_timeout_seconds: float = 30.0
 
 
 @lru_cache

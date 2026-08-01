@@ -9,16 +9,23 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.services.items import ItemNotFoundError, ItemRepository
+from app.core.errors import (
+    GatewayConfigError,
+    UpstreamError,
+    UpstreamProtocolError,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    app.state.item_repository = ItemRepository()
-    async with httpx.AsyncClient(
-        timeout=settings.http_client_timeout_seconds
-    ) as client:
+    timeout = httpx.Timeout(
+        connect=settings.upstream_connect_timeout_seconds,
+        read=None,
+        write=settings.upstream_write_timeout_seconds,
+        pool=settings.upstream_connect_timeout_seconds,
+    )
+    async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
         yield
 
@@ -43,13 +50,47 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    app.include_router(api_router, prefix=settings.api_prefix)
 
-    @app.exception_handler(ItemNotFoundError)
-    async def item_not_found_handler(
-        _: Request, exc: ItemNotFoundError
+    @app.exception_handler(GatewayConfigError)
+    async def config_error_handler(_: Request, exc: GatewayConfigError) -> JSONResponse:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "type": "gateway_configuration_error",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(UpstreamError)
+    async def upstream_error_handler(_: Request, exc: UpstreamError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "type": "upstream_error",
+                    "provider": exc.provider,
+                    "message": exc.detail,
+                }
+            },
+        )
+
+    @app.exception_handler(UpstreamProtocolError)
+    async def upstream_protocol_error_handler(
+        _: Request, exc: UpstreamProtocolError
     ) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "upstream_protocol_error",
+                    "provider": exc.provider,
+                    "message": exc.detail,
+                }
+            },
+        )
 
     return app
 

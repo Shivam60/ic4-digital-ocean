@@ -1,8 +1,10 @@
-# fastapi-async-service
+# model-router-gateway
 
-Async FastAPI service scaffold: fully `async def` route handlers, an async lifespan that
-owns shared resources, and an async test suite driven through the ASGI transport (no live
-server needed).
+An API gateway that acts as a unified model router. It accepts one standardized inference
+schema, translates it for real LLM providers, streams responses back over SSE without
+buffering, and falls back to a backup provider when a primary fails.
+
+See `ARCHITECTURE.md` for the design diagram and the delivery plan.
 
 ## Requirements
 
@@ -14,7 +16,7 @@ server needed).
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt   # use requirements.txt for production
-cp .env.example .env
+cp .env.example .env                  # then set OPENAI_API_KEY
 ```
 
 ## Run
@@ -25,62 +27,65 @@ uvicorn app.main:app --reload
 
 | Resource | URL |
 | --- | --- |
-| Health | http://127.0.0.1:8000/api/v1/health |
-| Items | http://127.0.0.1:8000/api/v1/items |
+| Health | http://127.0.0.1:8000/v1/health |
+| Chat completions | http://127.0.0.1:8000/v1/chat/completions |
 | Swagger UI | http://127.0.0.1:8000/docs |
 | OpenAPI schema | http://127.0.0.1:8000/openapi.json |
 
-## Test and lint
+## Usage
+
+Non-streaming:
 
 ```bash
-pytest
-ruff check .
-ruff format .
+curl -s http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
 ```
+
+Streaming over SSE — `-N` disables curl's own buffering so you can watch tokens arrive:
+
+```bash
+curl -N http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"stream":true}'
+```
+
+Point `OPENAI_BASE_URL` at any OpenAI-compatible upstream to use a different provider.
 
 ## Layout
 
 ```
 app/
-  main.py            app factory, lifespan, CORS, exception handlers
+  main.py            app factory, lifespan, shared HTTP client
   core/config.py     pydantic-settings configuration (env-driven)
+  core/errors.py     gateway and upstream error types
   api/
-    router.py        aggregates versioned routers
+    router.py        aggregates routers
     deps.py          typed dependency aliases
-    routes/          health.py, items.py
-  schemas/           request/response models
-  services/items.py  async in-memory repository
-tests/               async tests (conftest.py builds the ASGI client)
+    routes/          health.py, chat.py
+  schemas/chat.py    unified request/response/chunk models
+  services/          upstream call and SSE translation
 ```
 
-## How the async pieces fit together
+## Why the streaming path is shaped the way it is
 
-`lifespan` in `app/main.py` creates the shared `httpx.AsyncClient` and the item repository
-once per process and tears the client down on shutdown. Both are stored on `app.state` and
-reached through the dependency aliases in `app/api/deps.py`, so handlers never construct
-per-request clients:
+The upstream connection is opened and its status checked *before* the streaming response
+object is constructed. Starlette sends response headers before it begins iterating the
+response body generator, so opening the upstream lazily inside the generator would flush
+a `200` downstream before we knew the upstream was healthy — which would make the silent
+fallback in a later slice impossible. Nothing is buffered: chunks are translated and
+forwarded one at a time.
 
-```python
-async def call_upstream(client: HttpClientDep) -> dict:
-    response = await client.get("https://example.com/api")
-    return response.json()
-```
+## Timeout policy
 
-`ItemRepository` guards its dict with an `asyncio.Lock` so concurrent requests can't
-interleave on the ID counter. Replace it with a database-backed repository (for example
-SQLAlchemy's `AsyncSession` or `asyncpg`) by keeping the same async method signatures and
-binding the new implementation in `get_item_repository`.
-
-`pytest` runs in `asyncio_mode = "auto"` (set in `pyproject.toml`), so test functions can be
-`async def` without a decorator. `tests/conftest.py` wraps the app in `LifespanManager` so
-startup and shutdown run during tests, since `httpx.ASGITransport` skips lifespan events on
-its own.
+Streaming upstreams get no read timeout, because long gaps between tokens are normal.
+A stalled-but-connected upstream is instead caught by a separate first-chunk budget
+(`UPSTREAM_FIRST_CHUNK_TIMEOUT_SECONDS`), which is what triggers fallback to a backup
+provider.
 
 ## Notes
 
 - Configuration is read from environment variables or `.env`; field names map to uppercase
-  env keys (`api_v1_prefix` -> `API_V1_PREFIX`).
-- Item storage is in-memory and resets on restart. It is a placeholder for a real database.
-- If you add blocking I/O or CPU-bound work, run it off the event loop with
-  `starlette.concurrency.run_in_threadpool` (or a process pool) rather than awaiting it
-  inline.
+  env keys (`api_prefix` -> `API_PREFIX`).
+- The shared `httpx.AsyncClient` is created once per process in `lifespan` and reached
+  through `HttpClientDep`, so handlers never construct per-request clients.
