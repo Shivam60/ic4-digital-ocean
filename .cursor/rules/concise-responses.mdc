@@ -1,0 +1,22 @@
+---
+description: Keep chat responses short
+alwaysApply: true
+---
+
+# Response Length
+
+Keep every chat message under 200 words.
+
+Achieve this by cutting content, not by compressing prose into fragments,
+abbreviations, or arrow chains. Write complete sentences; include fewer of them.
+
+Lead with the outcome. Drop detail that does not change what the user does next:
+process narration, restated context, alternatives already ruled out, and
+reasoning the user did not ask for.
+
+Prefer plain paragraphs. Skip headers and tables unless the content is genuinely
+a list of facts.
+
+Code blocks and tool output do not count toward the limit.
+
+If a task genuinely needs a longer answer, ask before exceeding the limit.
