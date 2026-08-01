@@ -13,6 +13,12 @@ class ProviderConfig(BaseModel):
     api_key: str | None = None
 
 
+class ApiKeyConfig(BaseModel):
+    label: str
+    key_hash: str
+    scopes: list[str] = Field(default_factory=list)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -38,6 +44,10 @@ class Settings(BaseSettings):
 
     default_chain: list[str] = Field(default_factory=lambda: ["ollama"])
     model_routes: dict[str, list[str]] = Field(default_factory=dict)
+
+    # An empty list leaves the gateway open, which is only appropriate locally.
+    # A key with no scopes may use every scope.
+    api_keys: list[ApiKeyConfig] = Field(default_factory=list)
 
     anthropic_version: str = "2023-06-01"
     anthropic_default_max_tokens: int = 1024

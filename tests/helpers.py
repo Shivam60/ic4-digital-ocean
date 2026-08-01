@@ -58,6 +58,43 @@ def anthropic_provider(name: str = "anthropic_mock") -> AnthropicService:
     )
 
 
+def counting_provider(
+    name: str = "spy",
+) -> tuple[OpenAIService, list[httpx.Request]]:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-spy",
+                "object": "chat.completion",
+                "created": 1_700_000_000,
+                "model": MODEL_OK,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "spy reply"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 2,
+                    "total_tokens": 3,
+                },
+            },
+        )
+
+    service = OpenAIService(
+        name=name,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="http://provider.test/v1",
+    )
+    return service, calls
+
+
 def provider_returning(status_code: int, name: str = "flaky") -> OpenAIService:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -93,7 +130,11 @@ def use_chain(app: FastAPI, *providers: LLMService) -> None:
 
 
 async def ask(
-    client: httpx.AsyncClient, model: str, *, stream: bool = False
+    client: httpx.AsyncClient,
+    model: str,
+    *,
+    stream: bool = False,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     return await client.post(
         "/v1/chat/completions",
@@ -102,6 +143,7 @@ async def ask(
             "messages": [{"role": "user", "content": "hi"}],
             "stream": stream,
         },
+        headers=headers,
     )
 
 

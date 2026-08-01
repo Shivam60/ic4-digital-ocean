@@ -15,6 +15,17 @@ class GatewayConfigError(GatewayError):
     pass
 
 
+class AuthenticationError(GatewayError):
+    pass
+
+
+class AuthorizationError(GatewayError):
+    def __init__(self, label: str, scope: str) -> None:
+        self.label = label
+        self.scope = scope
+        super().__init__(f"key '{label}' is not permitted to use scope '{scope}'")
+
+
 class UpstreamError(GatewayError):
     def __init__(self, provider: str, status_code: int, detail: str) -> None:
         self.provider = provider

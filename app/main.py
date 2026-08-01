@@ -11,6 +11,8 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import (
     AllProvidersFailedError,
+    AuthenticationError,
+    AuthorizationError,
     GatewayConfigError,
     UpstreamError,
     UpstreamProtocolError,
@@ -83,6 +85,36 @@ def create_app() -> FastAPI:
                     "type": "model_not_routable",
                     "model": exc.model,
                     "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(AuthenticationError)
+    async def authentication_error_handler(
+        _: Request, exc: AuthenticationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+            content={
+                "error": {
+                    "type": "authentication_error",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(AuthorizationError)
+    async def authorization_error_handler(
+        _: Request, exc: AuthorizationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": {
+                    "type": "authorization_error",
+                    "message": str(exc),
+                    "required_scope": exc.scope,
                 }
             },
         )

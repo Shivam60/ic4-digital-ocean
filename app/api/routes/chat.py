@@ -1,10 +1,15 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import ModelRepositoryDep
+from app.api.deps import ModelRepositoryDep, require_scope
+from app.core.security import CHAT_COMPLETIONS_SCOPE, Principal
 from app.schemas.chat import ChatCompletionRequest, ChatCompletionResponse
 
 router = APIRouter(tags=["chat"])
+
+CallerDep = Annotated[Principal, Depends(require_scope(CHAT_COMPLETIONS_SCOPE))]
 
 
 @router.post(
@@ -15,6 +20,7 @@ router = APIRouter(tags=["chat"])
 async def chat_completions(
     payload: ChatCompletionRequest,
     repository: ModelRepositoryDep,
+    caller: CallerDep,
 ) -> ChatCompletionResponse | StreamingResponse:
     if not payload.stream:
         return await repository.complete(payload)
