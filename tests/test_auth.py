@@ -4,8 +4,10 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.core.config import ApiKeyConfig, Settings, get_settings
+from app.api.deps import get_api_key_store
+from app.core.config import ApiKeyConfig
 from app.core.security import CHAT_COMPLETIONS_SCOPE, hash_api_key
+from app.services.auth.config_store import ConfigApiKeyStore
 from tests.helpers import MODEL_OK, ask, counting_provider, error_of, use_chain
 
 VALID_KEY = "sk-gateway-valid"
@@ -13,9 +15,9 @@ SCOPED_KEY = "sk-gateway-scoped"
 UNKNOWN_KEY = "sk-gateway-unknown"
 
 
-def _settings_with_keys() -> Settings:
-    return Settings(
-        api_keys=[
+def _store_with_keys() -> ConfigApiKeyStore:
+    return ConfigApiKeyStore(
+        [
             ApiKeyConfig(label="full", key_hash=hash_api_key(VALID_KEY), scopes=[]),
             ApiKeyConfig(
                 label="reader",
@@ -36,7 +38,7 @@ def _reset_overrides(app: FastAPI) -> Iterator[None]:
 def guarded(app: FastAPI) -> list[httpx.Request]:
     provider, calls = counting_provider("upstream")
     use_chain(app, provider)
-    app.dependency_overrides[get_settings] = _settings_with_keys
+    app.dependency_overrides[get_api_key_store] = _store_with_keys
     return calls
 
 

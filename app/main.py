@@ -17,6 +17,7 @@ from app.core.errors import (
     UpstreamError,
     UpstreamProtocolError,
 )
+from app.services.auth.config_store import ConfigApiKeyStore
 from app.services.llm.registry import build_services
 from app.services.model_router import ModelNotRoutableError, ModelRouter
 
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
+        app.state.api_key_store = ConfigApiKeyStore(settings.api_keys)
         app.state.model_router = ModelRouter(
             services=build_services(settings, client),
             routes=settings.model_routes,
