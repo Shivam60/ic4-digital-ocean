@@ -18,7 +18,8 @@ engine never learns who it is talking to.
 | Ollama | `/api/chat` | Newline-delimited JSON, no SSE framing | Bare JSON lines reassembled into unified chunks; `done: true` becomes `finish_reason` |
 | Anthropic | `/v1/messages` | SSE with typed events, `message_stop` | System message hoisted out of `messages`, `max_tokens` injected, `content_block_delta` events flattened into deltas |
 
-Adding a provider means one service class plus one mapper. Nothing else changes.
+Adding a provider means one dialect plus one mapper. The HTTP transport is shared, so no
+new request, retry, or stream-teardown code is written per provider.
 
 ### 2. Streaming proxy over SSE
 
@@ -80,16 +81,17 @@ sequenceDiagram
 Nothing is buffered: each chunk is translated and forwarded as it arrives. The client sees
 one clean stream and never learns that the primary refused.
 
-The route knows only the repository. The repository knows only the `LLMService` interface,
-so it reads a status code and decides whether to move on, without ever learning which
-provider it called. Each service owns its own auth scheme and schema translation.
+The route knows only the router. The router knows only the `LLMService` interface, so it
+reads a status code and decides whether to move on, without ever learning which provider
+it called. Below that interface, one shared transport carries every request and a
+per-provider dialect supplies the auth scheme and the schema translation.
 
 ### The adapter seam
 
 ```mermaid
 classDiagram
     class ChatRoute {
-        +chat_completions(payload, repository)
+        +chat_completions(payload, model_router)
     }
 
     class ModelRouter {
@@ -113,27 +115,54 @@ classDiagram
         +AsyncIterator~str~ events
     }
 
-    class OpenAIService {
+    class HttpLLMService {
+        +str name
         -AsyncClient client
         -str base_url
         -str api_key
-        -_iter_events(response)
+        -Dialect dialect
+        -_iter_events(response, reader)
     }
 
-    class OllamaService {
-        -AsyncClient client
-        -str base_url
-        -str api_key
-        -_iter_events(response)
+    class Dialect {
+        <<protocol>>
+        +str path
+        +headers(api_key) dict
+        +to_payload(request, stream) dict
+        +to_response(body, provider) ChatCompletionResponse
+        +new_reader(provider) ChunkReader
     }
 
-    class AnthropicService {
-        -AsyncClient client
-        -str base_url
-        -str api_key
+    class ChunkReader {
+        <<protocol>>
+        +bool finished
+        +read(line) ChatCompletionChunk
+    }
+
+    class OpenAIDialect {
+        +str path = "/chat/completions"
+    }
+
+    class OllamaDialect {
+        +str path = "/api/chat"
+    }
+
+    class AnthropicDialect {
+        +str path = "/v1/messages"
         -str version
         -int default_max_tokens
-        -_iter_events(response)
+    }
+
+    class OpenAIChunkReader {
+        strips "data:", stops on [DONE]
+    }
+
+    class OllamaChunkReader {
+        bare JSON lines, stops on done
+    }
+
+    class AnthropicChunkReader {
+        -AnthropicStreamState state
     }
 
     class openai_mapper {
@@ -159,6 +188,7 @@ classDiagram
 
     class registry {
         <<module>>
+        +build_dialect()
         +build_service()
         +build_services()
     }
@@ -166,20 +196,44 @@ classDiagram
     ChatRoute --> ModelRouter
     ModelRouter o-- LLMService
     ModelRouter ..> StreamHandle
-    LLMService <|.. OpenAIService
-    LLMService <|.. OllamaService
-    LLMService <|.. AnthropicService
-    OpenAIService ..> openai_mapper
-    OllamaService ..> ollama_mapper
-    AnthropicService ..> anthropic_mapper
-    registry ..> LLMService : constructs from config
+    LLMService <|.. HttpLLMService
+    HttpLLMService o-- Dialect
+    HttpLLMService ..> ChunkReader : drives per stream
+    Dialect <|.. OpenAIDialect
+    Dialect <|.. OllamaDialect
+    Dialect <|.. AnthropicDialect
+    ChunkReader <|.. OpenAIChunkReader
+    ChunkReader <|.. OllamaChunkReader
+    ChunkReader <|.. AnthropicChunkReader
+    OpenAIDialect ..> OpenAIChunkReader : creates
+    OllamaDialect ..> OllamaChunkReader : creates
+    AnthropicDialect ..> AnthropicChunkReader : creates
+    OpenAIDialect ..> openai_mapper
+    OllamaDialect ..> ollama_mapper
+    AnthropicDialect ..> anthropic_mapper
+    registry ..> HttpLLMService : constructs from config
 ```
 
-The seam is the `LLMService` protocol plus `StreamHandle`. Everything above it speaks the
-unified schema; everything below it speaks a provider dialect. `AnthropicStreamState` is
-the one asymmetry — Anthropic's typed event stream is stateful, since a `content_block_delta`
-only makes sense relative to the `message_start` that preceded it, so that mapper carries a
-small state machine where the others are pure functions.
+There are two seams, and the split is what keeps provider count from multiplying transport
+code.
+
+`LLMService` plus `StreamHandle` is the outer seam. Everything above it speaks the unified
+schema, and the router reads only a status code and a name.
+
+`Dialect` plus `ChunkReader` is the inner seam. `HttpLLMService` is the single
+implementation of `LLMService`: it builds the URL, merges headers, posts, checks the
+status, and runs the relay loop that closes the upstream response in a `finally`. It never
+knows which provider it is holding. The dialect contributes only the pure per-provider
+parts — a path, headers, payload and response translation, and a fresh reader per stream —
+which is why the three providers now share one copy of the transport instead of three near
+identical ones.
+
+`ChunkReader` exists because parsing a stream is stateful in a way payload translation is
+not. It answers two questions per line: what unified chunk does this become, and is the
+stream over. `AnthropicStreamState` is the sharpest case — a `content_block_delta` only
+makes sense relative to the `message_start` before it — but even OpenAI needs to recognise
+its `[DONE]` sentinel and Ollama its `done: true` flag, and those terminators are exactly
+what the shared loop must not hardcode.
 
 ## Requirements
 
@@ -295,8 +349,10 @@ relay generator and drops the connection.
 ### Client disconnection mid-generation
 
 When a client hangs up, the ASGI server cancels the response task, which closes the relay
-generator. Each service's `_iter_events` closes the upstream response in a `finally`
-block, so the upstream connection is released rather than left to run to completion. This
+generator. `HttpLLMService._iter_events` closes the upstream response in a `finally`
+block, so the upstream connection is released rather than left to run to completion. Since
+there is one relay loop rather than one per provider, this holds for every dialect by
+construction instead of by repetition. This
 matters commercially as much as technically: an abandoned stream that keeps reading is a
 stream that keeps billing for tokens nobody will ever see.
 
@@ -306,11 +362,13 @@ stream that keeps billing for tokens nobody will ever see.
 pytest
 ```
 
-Three layers:
+Four layers:
 
-- **Unit and integration** — the app in-process with mocked transports, covering schema
-  translation for all three dialects, silent fallback, terminal errors, and chain
-  exhaustion.
+- **Unit** (`tests/unit/`) — `HttpLLMService` alone, driven by a stub dialect over a mocked
+  transport. No app, no real provider format, so these fail only when the shared transport
+  itself breaks. CI runs them as their own step.
+- **Integration** — the app in-process with mocked transports, covering schema translation
+  for all three dialects, silent fallback, terminal errors, and chain exhaustion.
 - **Cross-format fallback** — falling back from one wire format to another, which proves
   the adapter seam is real rather than decorative.
 - **End-to-end** (`tests/e2e/`) — the gateway over real sockets, asserting that tokens
@@ -340,14 +398,15 @@ app/
   schemas/chat.py             unified request/response/chunk models
   services/
     model_router.py           chain resolution and the fallback loop
-    llm/base.py               LLMService protocol and StreamHandle
-    llm/registry.py           builds services from configuration
-    llm/openai.py             OpenAI provider service
-    llm/ollama.py             Ollama provider service (native /api/chat, NDJSON)
-    llm/anthropic.py          Anthropic provider service (/v1/messages, typed events)
+    llm/base.py               LLMService, Dialect and ChunkReader protocols, StreamHandle
+    llm/http_service.py       the one HTTP transport, shared by every provider
+    llm/registry.py           builds dialects and services from configuration
+    llm/openai.py             OpenAI dialect and chunk reader
+    llm/ollama.py             Ollama dialect and chunk reader (native /api/chat, NDJSON)
+    llm/anthropic.py          Anthropic dialect and chunk reader (/v1/messages, typed events)
     llm/*_mapper.py           per-dialect schema translation to and from the unified models
 mock_provider/                standalone fake providers, one per dialect
-tests/                        in-process suites, plus e2e/ over real sockets
+tests/                        in-process suites, plus unit/ and e2e/ over real sockets
 ```
 
 ## Notes
