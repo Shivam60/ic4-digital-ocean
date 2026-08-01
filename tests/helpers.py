@@ -5,10 +5,11 @@ import httpx
 from fastapi import FastAPI
 
 from app.api.deps import get_model_router
-from app.services.llm.anthropic import AnthropicService
+from app.services.llm.anthropic import AnthropicDialect
 from app.services.llm.base import LLMService
-from app.services.llm.ollama import OllamaService
-from app.services.llm.openai import OpenAIService
+from app.services.llm.http_service import HttpLLMService
+from app.services.llm.ollama import OllamaDialect
+from app.services.llm.openai import OpenAIDialect
 from app.services.model_router import ModelRouter
 from mock_provider.anthropic import app as mock_anthropic_app
 from mock_provider.ollama import app as mock_ollama_app
@@ -25,42 +26,46 @@ OLLAMA_MOCK_REPLY = "Hello, world from the ollama mock."
 ANTHROPIC_MOCK_REPLY = "Hello, world from the anthropic mock."
 
 
-def openai_provider(name: str = "openai_mock") -> OpenAIService:
-    return OpenAIService(
+def openai_provider(name: str = "openai_mock") -> HttpLLMService:
+    return HttpLLMService(
         name=name,
         client=_asgi_client(mock_openai_app),
         base_url="http://provider.test/v1",
+        dialect=OpenAIDialect(),
     )
 
 
-def ollama_provider(name: str = "ollama_mock") -> OllamaService:
-    return OllamaService(
+def ollama_provider(name: str = "ollama_mock") -> HttpLLMService:
+    return HttpLLMService(
         name=name,
         client=_asgi_client(mock_ollama_app),
         base_url="http://provider.test",
+        dialect=OllamaDialect(),
     )
 
 
-def ollama_compat_provider(name: str = "ollama_compat") -> OpenAIService:
-    return OpenAIService(
+def ollama_compat_provider(name: str = "ollama_compat") -> HttpLLMService:
+    return HttpLLMService(
         name=name,
         client=_asgi_client(mock_ollama_app),
         base_url="http://provider.test/v1",
+        dialect=OpenAIDialect(),
     )
 
 
-def anthropic_provider(name: str = "anthropic_mock") -> AnthropicService:
-    return AnthropicService(
+def anthropic_provider(name: str = "anthropic_mock") -> HttpLLMService:
+    return HttpLLMService(
         name=name,
         client=_asgi_client(mock_anthropic_app),
         base_url="http://provider.test",
+        dialect=AnthropicDialect(),
         api_key="test-anthropic-key",
     )
 
 
 def counting_provider(
     name: str = "spy",
-) -> tuple[OpenAIService, list[httpx.Request]]:
+) -> tuple[HttpLLMService, list[httpx.Request]]:
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -87,36 +92,39 @@ def counting_provider(
             },
         )
 
-    service = OpenAIService(
+    service = HttpLLMService(
         name=name,
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         base_url="http://provider.test/v1",
+        dialect=OpenAIDialect(),
     )
     return service, calls
 
 
-def provider_returning(status_code: int, name: str = "flaky") -> OpenAIService:
+def provider_returning(status_code: int, name: str = "flaky") -> HttpLLMService:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status_code,
             json={"error": {"message": "upstream is unhappy", "type": "server_error"}},
         )
 
-    return OpenAIService(
+    return HttpLLMService(
         name=name,
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         base_url="http://provider.test/v1",
+        dialect=OpenAIDialect(),
     )
 
 
-def unreachable_provider(name: str = "dead") -> OpenAIService:
+def unreachable_provider(name: str = "dead") -> HttpLLMService:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    return OpenAIService(
+    return HttpLLMService(
         name=name,
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         base_url="http://provider.test/v1",
+        dialect=OpenAIDialect(),
     )
 
 

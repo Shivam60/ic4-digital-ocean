@@ -2,10 +2,22 @@ import httpx
 
 from app.core.config import ProviderConfig, Settings
 from app.core.errors import GatewayConfigError
-from app.services.llm.anthropic import AnthropicService
-from app.services.llm.base import LLMService
-from app.services.llm.ollama import OllamaService
-from app.services.llm.openai import OpenAIService
+from app.services.llm.anthropic import AnthropicDialect
+from app.services.llm.base import Dialect, LLMService
+from app.services.llm.http_service import HttpLLMService
+from app.services.llm.ollama import OllamaDialect
+from app.services.llm.openai import OpenAIDialect
+
+
+def build_dialect(config: ProviderConfig, settings: Settings) -> Dialect:
+    if config.kind == "openai":
+        return OpenAIDialect()
+    if config.kind == "ollama":
+        return OllamaDialect()
+    return AnthropicDialect(
+        version=settings.anthropic_version,
+        default_max_tokens=settings.anthropic_default_max_tokens,
+    )
 
 
 def build_service(
@@ -14,27 +26,12 @@ def build_service(
     client: httpx.AsyncClient,
     settings: Settings,
 ) -> LLMService:
-    if config.kind == "openai":
-        return OpenAIService(
-            name=name,
-            client=client,
-            base_url=config.base_url,
-            api_key=config.api_key,
-        )
-    if config.kind == "ollama":
-        return OllamaService(
-            name=name,
-            client=client,
-            base_url=config.base_url,
-            api_key=config.api_key,
-        )
-    return AnthropicService(
+    return HttpLLMService(
         name=name,
         client=client,
         base_url=config.base_url,
+        dialect=build_dialect(config, settings),
         api_key=config.api_key,
-        version=settings.anthropic_version,
-        default_max_tokens=settings.anthropic_default_max_tokens,
     )
 
 

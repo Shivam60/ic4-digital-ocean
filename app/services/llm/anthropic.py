@@ -1,50 +1,54 @@
-from collections.abc import AsyncIterator
+from typing import Any
 
-import httpx
-
-from app.core.errors import UpstreamError
-from app.schemas.chat import ChatCompletionRequest, ChatCompletionResponse
+from app.schemas.chat import (
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+)
 from app.services.llm.anthropic_mapper import (
     AnthropicStreamState,
     to_unified_response,
     to_upstream_payload,
 )
-from app.services.llm.base import StreamHandle
+from app.services.llm.base import ChunkReader
 
-SSE_DONE = "[DONE]"
+DEFAULT_VERSION = "2023-06-01"
+DEFAULT_MAX_TOKENS = 1024
 
 
-class AnthropicService:
+class AnthropicChunkReader:
+    def __init__(self, provider: str) -> None:
+        self._state = AnthropicStreamState(provider)
+        self.finished = False
+
+    def read(self, line: str) -> ChatCompletionChunk | None:
+        if not line.startswith("data:"):
+            return None
+        chunk = self._state.consume(line[len("data:") :].strip())
+        self.finished = self._state.finished
+        return chunk
+
+
+class AnthropicDialect:
+    path = "/v1/messages"
+
     def __init__(
         self,
-        name: str,
-        client: httpx.AsyncClient,
-        base_url: str,
-        api_key: str | None = None,
-        version: str = "2023-06-01",
-        default_max_tokens: int = 1024,
+        version: str = DEFAULT_VERSION,
+        default_max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
-        self.name = name
-        self._client = client
-        self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
         self._version = version
         self._default_max_tokens = default_max_tokens
 
-    @property
-    def _url(self) -> str:
-        return f"{self._base_url}/v1/messages"
-
-    def _headers(self) -> dict[str, str]:
-        headers = {
-            "Content-Type": "application/json",
-            "anthropic-version": self._version,
-        }
-        if self._api_key:
-            headers["x-api-key"] = self._api_key
+    def headers(self, api_key: str | None) -> dict[str, str]:
+        headers = {"anthropic-version": self._version}
+        if api_key:
+            headers["x-api-key"] = api_key
         return headers
 
-    def _payload(self, request: ChatCompletionRequest, *, stream: bool) -> dict:
+    def to_payload(
+        self, request: ChatCompletionRequest, *, stream: bool
+    ) -> dict[str, Any]:
         return to_upstream_payload(
             request,
             model=request.model,
@@ -52,42 +56,10 @@ class AnthropicService:
             default_max_tokens=self._default_max_tokens,
         )
 
-    async def complete(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
-        response = await self._client.post(
-            self._url,
-            json=self._payload(request, stream=False),
-            headers=self._headers(),
-        )
-        if response.status_code >= 400:
-            raise UpstreamError(self.name, response.status_code, response.text)
-        return to_unified_response(response.json(), provider=self.name)
+    def to_response(
+        self, body: dict[str, Any], *, provider: str
+    ) -> ChatCompletionResponse:
+        return to_unified_response(body, provider=provider)
 
-    async def stream(self, request: ChatCompletionRequest) -> StreamHandle:
-        upstream_request = self._client.build_request(
-            "POST",
-            self._url,
-            json=self._payload(request, stream=True),
-            headers=self._headers(),
-        )
-        response = await self._client.send(upstream_request, stream=True)
-        if response.status_code >= 400:
-            await response.aread()
-            detail = response.text
-            await response.aclose()
-            raise UpstreamError(self.name, response.status_code, detail)
-        return StreamHandle(provider=self.name, events=self._iter_events(response))
-
-    async def _iter_events(self, response: httpx.Response) -> AsyncIterator[str]:
-        state = AnthropicStreamState(self.name)
-        try:
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                chunk = state.consume(line[len("data:") :].strip())
-                if chunk is not None:
-                    yield f"data: {chunk.model_dump_json()}\n\n"
-                if state.finished:
-                    break
-            yield f"data: {SSE_DONE}\n\n"
-        finally:
-            await response.aclose()
+    def new_reader(self, provider: str) -> ChunkReader:
+        return AnthropicChunkReader(provider)

@@ -7,7 +7,8 @@ from fastapi import FastAPI
 
 from app.api.deps import get_model_router
 from app.core.config import Settings, get_settings
-from app.services.llm.openai import OpenAIService
+from app.services.llm.http_service import HttpLLMService
+from app.services.llm.openai import OpenAIDialect
 from app.services.llm.openai_mapper import SSE_DONE
 from app.services.model_router import ModelRouter
 
@@ -66,10 +67,11 @@ def seen_requests(app: FastAPI, upstream_settings: Settings) -> list[httpx.Reque
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     model_router = ModelRouter(
         services=[
-            OpenAIService(
+            HttpLLMService(
                 name=PROVIDER_NAME,
                 client=mock_client,
                 base_url="http://upstream.test/v1",
+                dialect=OpenAIDialect(),
                 api_key=UPSTREAM_API_KEY,
             )
         ],
