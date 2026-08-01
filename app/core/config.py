@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
 
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+
+    default_provider: str = "ollama"
+    model_routes: dict[str, str] = Field(default_factory=dict)
+
     # Streaming upstreams must not carry a read timeout: long gaps between tokens are
     # normal. A stalled-but-connected upstream is caught by the first-chunk budget.
     upstream_connect_timeout_seconds: float = 5.0

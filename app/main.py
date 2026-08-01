@@ -14,6 +14,8 @@ from app.core.errors import (
     UpstreamError,
     UpstreamProtocolError,
 )
+from app.services.llm.ollama import OllamaService
+from app.services.model_repository import ModelNotRoutableError, ModelRepository
 
 
 @asynccontextmanager
@@ -27,6 +29,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
+        app.state.model_repository = ModelRepository(
+            services=[OllamaService(client, settings.ollama_base_url)],
+            routes=settings.model_routes,
+            default_provider=settings.default_provider,
+        )
         yield
 
 
@@ -59,6 +66,21 @@ def create_app() -> FastAPI:
             content={
                 "error": {
                     "type": "gateway_configuration_error",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(ModelNotRoutableError)
+    async def model_not_routable_handler(
+        _: Request, exc: ModelNotRoutableError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "model_not_routable",
+                    "model": exc.model,
                     "message": str(exc),
                 }
             },

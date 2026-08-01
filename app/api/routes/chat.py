@@ -1,14 +1,9 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import HttpClientDep, SettingsDep
+from app.api.deps import HttpClientDep, ModelRepositoryDep, SettingsDep
 from app.schemas.chat import ChatCompletionRequest, ChatCompletionResponse
-from app.services.completions import (
-    PROVIDER_NAME,
-    create_chat_completion,
-    iter_stream,
-    open_stream,
-)
+from app.services.completions import PROVIDER_NAME, iter_stream, open_stream
 
 router = APIRouter(tags=["chat"])
 
@@ -20,11 +15,12 @@ router = APIRouter(tags=["chat"])
 )
 async def chat_completions(
     payload: ChatCompletionRequest,
+    repository: ModelRepositoryDep,
     client: HttpClientDep,
     settings: SettingsDep,
 ) -> ChatCompletionResponse | StreamingResponse:
     if not payload.stream:
-        return await create_chat_completion(client, settings, payload)
+        return await repository.complete(payload)
 
     upstream = await open_stream(client, settings, payload)
     return StreamingResponse(

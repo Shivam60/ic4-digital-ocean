@@ -101,18 +101,22 @@ product.
 
 ### MVP — the demo stands on its own after slice 6
 
-- [ ] **1. Strip the scaffold, add gateway config.** Remove the `items` demo, extend
+Slices 1–3 are committed and verified live against a local Ollama server
+(`qwen2.5:0.5b`) via `OPENAI_BASE_URL=http://127.0.0.1:11434/v1`: non-streaming, SSE
+streaming, and upstream error passthrough all confirmed.
+
+- [x] **1. Strip the scaffold, add gateway config.** Remove the `items` demo, extend
       settings with provider keys, base URLs, and timeout policy. Mount the API at `/v1`.
       *Done when:* server boots, `/health` responds.
       *Commit:* `chore: strip demo scaffold, add gateway configuration`
 
-- [ ] **2. Unified schema, one provider, non-streaming.** `POST /v1/chat/completions`
+- [x] **2. Unified schema, one provider, non-streaming.** `POST /v1/chat/completions`
       with `stream=false`, hardcoded to a single upstream. No adapter abstraction, no
       fallback. The thinnest possible vertical slice.
       *Done when:* a curl returns a real completion.
       *Commit:* `feat: unified chat completions endpoint over a single upstream`
 
-- [ ] **3. Streaming relay.** Same endpoint with `stream=true`, SSE out, nothing
+- [x] **3. Streaming relay.** Same endpoint with `stream=true`, SSE out, nothing
       buffered. Still one provider, still no fallback.
       *Done when:* `curl -N` shows tokens arriving progressively.
       *Commit:* `feat: SSE streaming relay`
